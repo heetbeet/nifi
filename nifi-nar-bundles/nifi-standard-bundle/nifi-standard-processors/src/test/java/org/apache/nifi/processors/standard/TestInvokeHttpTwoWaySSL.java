@@ -20,12 +20,14 @@ package org.apache.nifi.processors.standard;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.Security;
 import javax.net.ssl.SSLContext;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.security.util.ClientAuth;
 import org.apache.nifi.security.util.KeyStoreUtils;
 import org.apache.nifi.security.util.SslContextFactory;
 import org.apache.nifi.security.util.TlsConfiguration;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 
@@ -41,12 +43,14 @@ public class TestInvokeHttpTwoWaySSL extends TestInvokeHttpSSL {
 
     @BeforeClass
     public static void beforeClass() throws Exception {
-        // generate new keystore and truststore
         serverConfig = KeyStoreUtils.createTlsConfigAndNewKeystoreTruststore();
 
         final SSLContext serverContext = SslContextFactory.createSslContext(serverConfig);
         configureServer(serverContext, ClientAuth.REQUIRED);
         clientSslContext = SslContextFactory.createSslContext(serverConfig);
+
+        // Remove Bouncy Castle Provider for testing
+        Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME);
     }
 
     @AfterClass
@@ -68,6 +72,7 @@ public class TestInvokeHttpTwoWaySSL extends TestInvokeHttpSSL {
                 throw new IOException("There was an error deleting a truststore: " + e.getMessage(), e);
             }
         }
+        Security.addProvider(new BouncyCastleProvider());
     }
 
     @Override

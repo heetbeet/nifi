@@ -24,10 +24,13 @@ import org.apache.nifi.security.util.StandardTlsConfiguration;
 import org.apache.nifi.security.util.TlsConfiguration;
 import org.apache.nifi.security.util.TlsException;
 import org.apache.nifi.ssl.SSLContextService;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
+import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.mockito.Mockito;
 
 import javax.net.ssl.SSLContext;
+import java.security.Security;
 
 public class TestPutTcpSSL extends TestPutTCPCommon {
     private static final String TLS_PROTOCOL = "TLSv1.2";
@@ -47,6 +50,13 @@ public class TestPutTcpSSL extends TestPutTCPCommon {
                 TLS_PROTOCOL
         );
         sslContext = SslContextFactory.createSslContext(configuration);
+        // Remove Bouncy Castle Provider for testing
+        Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME);
+    }
+
+    @AfterClass
+    public static void setSecurityProvider() {
+        Security.addProvider(new BouncyCastleProvider());
     }
 
     public TestPutTcpSSL() {

@@ -20,6 +20,7 @@ package org.apache.nifi.processors.standard;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.Security;
 import javax.net.ssl.SSLContext;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.nifi.processors.standard.util.TestInvokeHttpCommon;
@@ -30,6 +31,7 @@ import org.apache.nifi.security.util.StandardTlsConfiguration;
 import org.apache.nifi.security.util.TlsConfiguration;
 import org.apache.nifi.ssl.SSLContextService;
 import org.apache.nifi.util.TestRunners;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.junit.AfterClass;
 import org.junit.Before;
 import org.junit.BeforeClass;
@@ -66,6 +68,9 @@ public class TestInvokeHttpSSL extends TestInvokeHttpCommon {
         final SSLContext serverContext = SslContextFactory.createSslContext(serverConfiguration);
         configureServer(serverContext, ClientAuth.NONE);
         truststoreSslContext = SslContextFactory.createSslContext(truststoreConfiguration);
+
+        // Remove Bouncy Castle Provider for testing
+        Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME);
     }
 
     @AfterClass
@@ -87,6 +92,7 @@ public class TestInvokeHttpSSL extends TestInvokeHttpCommon {
                 throw new IOException("There was an error deleting a truststore: " + e.getMessage(), e);
             }
         }
+        Security.addProvider(new BouncyCastleProvider());
     }
 
     @Before
