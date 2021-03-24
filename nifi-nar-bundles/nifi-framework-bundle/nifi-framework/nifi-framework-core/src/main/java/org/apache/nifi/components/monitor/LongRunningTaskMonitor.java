@@ -49,26 +49,30 @@ public class LongRunningTaskMonitor implements Runnable {
         int activeThreadCount = 0;
         int longRunningThreadCount = 0;
 
-        ThreadDetails threadDetails = captureThreadDetails();
+        final ThreadDetails threadDetails = captureThreadDetails();
 
-        for (ProcessorNode processorNode : flowManager.getRootGroup().findAllProcessors()) {
-            List<ActiveThreadInfo> activeThreads = processorNode.getActiveThreads(threadDetails);
+        for (final ProcessorNode processorNode : flowManager.getRootGroup().findAllProcessors()) {
+            final List<ActiveThreadInfo> activeThreads = processorNode.getActiveThreads(threadDetails);
             activeThreadCount += activeThreads.size();
 
             for (ActiveThreadInfo activeThread : activeThreads) {
                 if (activeThread.getActiveMillis() > thresholdMillis) {
                     longRunningThreadCount++;
 
-                    String taskSeconds = String.format("%,d seconds", activeThread.getActiveMillis() / 1000);
+                    final String taskSeconds = String.format("%,d seconds", activeThread.getActiveMillis() / 1000);
+                    final String processorId = processorNode.getIdentifier();
+                    final String processorName = processorNode.getName();
+                    final String componentType = processorNode.getComponentType();
 
-                    getLogger().warn(String.format("Long running task detected on processor [id=%s, name=%s, type=%s]. Task time: %s. Stack trace:\n%s",
-                            processorNode.getIdentifier(), processorNode.getName(), processorNode.getComponentType(), taskSeconds, activeThread.getStackTrace()));
+                    getLogger().warn("Long running task detected on processor [id={}, name={}, type={}]. Task time: {}. Stack trace:\n{}",
+                            processorId, processorName, componentType, taskSeconds, activeThread.getStackTrace());
 
-                    eventReporter.reportEvent(Severity.WARNING, "Long Running Task", String.format("Processor with ID %s, Name %s and Type %s has a task that has been running for %s " +
-                            "(thread name: %s).", processorNode.getIdentifier(), processorNode.getName(), processorNode.getComponentType(), taskSeconds, activeThread.getThreadName()));
+                    final String threadName = activeThread.getThreadName();
+                    final String eventMessage = String.format("Processor with ID %s, Name %s and Type %s has a task that has been running for %s " +
+                            "(thread name: %s).", processorId, processorName, componentType, taskSeconds, threadName);
+                    eventReporter.reportEvent(Severity.WARNING, "Long Running Task", eventMessage);
 
-                    processorNode.getLogger().warn(String.format("The processor has a task that has been running for %s (thread name: %s).",
-                            taskSeconds, activeThread.getThreadName()));
+                    processorNode.getLogger().warn("The processor has a task that has been running for {} (thread name: {})", new Object[]{ taskSeconds, threadName });
                 }
             }
         }

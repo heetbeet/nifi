@@ -26,54 +26,40 @@ import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.reporting.Severity;
 import org.junit.Test;
-import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
+import org.mockito.verification.VerificationMode;
 import org.slf4j.Logger;
 
-import java.util.Arrays;
+import java.util.Collections;
+import java.util.UUID;
 
-import static org.junit.Assert.assertEquals;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.never;
 
 public class LongRunningTaskMonitorTest {
+    private static final long ACTIVE_MILLIS = 1000;
 
-    private static final String STACKTRACE = "line1\nline2";
+    private static final long WARNING_THRESHOLD = ACTIVE_MILLIS / 2;
+
+    private static final long NO_WARNING_THRESHOLD = ACTIVE_MILLIS * 2;
 
     @Test
-    public void test() {
-        // GIVEN
-        ThreadDetails threadDetails = mock(ThreadDetails.class);
+    public void testRunReportWarnings() {
+        final ThreadDetails threadDetails = mock(ThreadDetails.class);
+        final TerminationAwareLogger processorLogger = mock(TerminationAwareLogger.class);
+        final FlowManager flowManager = mockFlowManager(threadDetails, processorLogger);
+        final EventReporter eventReporter = mock(EventReporter.class);
+        final Logger monitorLogger = mock(Logger.class);
 
-        ActiveThreadInfo activeThreadInfo11 = mockActiveThreadInfo("Thread-11", 60_000);
-        ActiveThreadInfo activeThreadInfo12 = mockActiveThreadInfo("Thread-12", 60_001);
-
-        TerminationAwareLogger processorLogger1 = mock(TerminationAwareLogger.class);
-        ProcessorNode processorNode1 = mockProcessorNode("Processor-1-ID", "Processor-1-Name", "Processor-1-Type", processorLogger1,
-                threadDetails, activeThreadInfo11, activeThreadInfo12);
-
-        ActiveThreadInfo activeThreadInfo21 = mockActiveThreadInfo("Thread-21", 1_000_000);
-        ActiveThreadInfo activeThreadInfo22 = mockActiveThreadInfo("Thread-22", 1_000);
-
-        TerminationAwareLogger processorLogger2 = mock(TerminationAwareLogger.class);
-        ProcessorNode processorNode2 = mockProcessorNode("Processor-2-ID", "Processor-2-Name", "Processor-2-Type", processorLogger2,
-                threadDetails, activeThreadInfo21, activeThreadInfo22);
-
-        ProcessGroup processGroup = mockProcessGroup(processorNode1, processorNode2);
-
-        FlowManager flowManager = mockFlowManager(processGroup);
-
-        EventReporter eventReporter = mock(EventReporter.class);
-
-        Logger longRunningTaskMonitorLogger = mock(Logger.class);
-
-        LongRunningTaskMonitor longRunningTaskMonitor = new LongRunningTaskMonitor(flowManager, eventReporter, 60_000) {
+        final LongRunningTaskMonitor longRunningTaskMonitor = new LongRunningTaskMonitor(flowManager, eventReporter, WARNING_THRESHOLD) {
             @Override
             protected Logger getLogger() {
-                return longRunningTaskMonitorLogger;
+                return monitorLogger;
             }
 
             @Override
@@ -82,71 +68,69 @@ public class LongRunningTaskMonitorTest {
             }
         };
 
-        // WHEN
         longRunningTaskMonitor.run();
 
-        // THEN
-        verify(longRunningTaskMonitorLogger).debug("Checking long running processor tasks...");
-
-        ArgumentCaptor<String> logMessages = ArgumentCaptor.forClass(String.class);
-        verify(longRunningTaskMonitorLogger, times(2)).warn(logMessages.capture());
-        assertEquals("Long running task detected on processor [id=Processor-1-ID, name=Processor-1-Name, type=Processor-1-Type]. Task time: 60 seconds. Stack trace:\n" + STACKTRACE,
-                logMessages.getAllValues().get(0));
-        assertEquals("Long running task detected on processor [id=Processor-2-ID, name=Processor-2-Name, type=Processor-2-Type]. Task time: 1,000 seconds. Stack trace:\n" + STACKTRACE,
-                logMessages.getAllValues().get(1));
-
-        ArgumentCaptor<String> controllerBulletinMessages = ArgumentCaptor.forClass(String.class);
-        verify(eventReporter, times(2)).reportEvent(eq(Severity.WARNING), eq("Long Running Task"), controllerBulletinMessages.capture());
-        assertEquals("Processor with ID Processor-1-ID, Name Processor-1-Name and Type Processor-1-Type has a task that has been running for 60 seconds (thread name: Thread-12).",
-                controllerBulletinMessages.getAllValues().get(0));
-        assertEquals("Processor with ID Processor-2-ID, Name Processor-2-Name and Type Processor-2-Type has a task that has been running for 1,000 seconds (thread name: Thread-21).",
-                controllerBulletinMessages.getAllValues().get(1));
-
-        verify(processorLogger1).warn("The processor has a task that has been running for 60 seconds (thread name: Thread-12).");
-
-        verify(processorLogger2).warn("The processor has a task that has been running for 1,000 seconds (thread name: Thread-21).");
-
-        verify(longRunningTaskMonitorLogger).info("Active threads: {}; Long running threads: {}", 4, 2);
-
-        verifyNoMoreInteractions(longRunningTaskMonitorLogger, eventReporter, processorLogger1, processorLogger2);
+        verifyMonitorLogger(monitorLogger, atLeastOnce());
+        verifyProcessorLogger(processorLogger, atLeastOnce());
+        verifyEventReporter(eventReporter, atLeastOnce());
     }
 
-    private ActiveThreadInfo mockActiveThreadInfo(String threadName, long activeMillis) {
-        ActiveThreadInfo activeThreadInfo = mock(ActiveThreadInfo.class);
+    @Test
+    public void testRunNoWarnings() {
+        final ThreadDetails threadDetails = mock(ThreadDetails.class);
+        final TerminationAwareLogger processorLogger = mock(TerminationAwareLogger.class);
+        final FlowManager flowManager = mockFlowManager(threadDetails, processorLogger);
+        final EventReporter eventReporter = mock(EventReporter.class);
+        final Logger monitorLogger = mock(Logger.class);
 
-        when(activeThreadInfo.getThreadName()).thenReturn(threadName);
-        when(activeThreadInfo.getStackTrace()).thenReturn(STACKTRACE);
-        when(activeThreadInfo.getActiveMillis()).thenReturn(activeMillis);
+        final LongRunningTaskMonitor longRunningTaskMonitor = new LongRunningTaskMonitor(flowManager, eventReporter, NO_WARNING_THRESHOLD) {
+            @Override
+            protected Logger getLogger() {
+                return monitorLogger;
+            }
 
-        return activeThreadInfo;
+            @Override
+            protected ThreadDetails captureThreadDetails() {
+                return threadDetails;
+            }
+        };
+
+        longRunningTaskMonitor.run();
+
+        verifyMonitorLogger(monitorLogger, never());
+        verifyProcessorLogger(processorLogger, never());
+        verifyEventReporter(eventReporter, never());
     }
 
-    private ProcessorNode mockProcessorNode(String processorId, String processorName, String processorType, TerminationAwareLogger processorLogger,
-                                            ThreadDetails threadDetails, ActiveThreadInfo... activeThreadInfos) {
-        ProcessorNode processorNode = mock(ProcessorNode.class);
+    private void verifyMonitorLogger(final Logger logger, final VerificationMode verificationMode) {
+        verify(logger, verificationMode).warn(anyString(), ArgumentMatchers.<Object[]>any());
+    }
 
-        when(processorNode.getIdentifier()).thenReturn(processorId);
-        when(processorNode.getName()).thenReturn(processorName);
-        when(processorNode.getComponentType()).thenReturn(processorType);
+    private void verifyProcessorLogger(final TerminationAwareLogger logger, final VerificationMode verificationMode) {
+        verify(logger, verificationMode).warn(anyString(), ArgumentMatchers.<Object[]>any());
+    }
+
+    private void verifyEventReporter(final EventReporter eventReporter, final VerificationMode verificationMode) {
+        verify(eventReporter, verificationMode).reportEvent(eq(Severity.WARNING), anyString(), anyString());
+    }
+
+    private FlowManager mockFlowManager(final ThreadDetails threadDetails, final TerminationAwareLogger processorLogger) {
+        final ActiveThreadInfo activeThreadInfo = mock(ActiveThreadInfo.class);
+        when(activeThreadInfo.getThreadName()).thenReturn("Thread-1");
+        when(activeThreadInfo.getActiveMillis()).thenReturn(ACTIVE_MILLIS);
+
+        final ProcessorNode processorNode = mock(ProcessorNode.class);
+
+        when(processorNode.getIdentifier()).thenReturn(UUID.randomUUID().toString());
+        when(processorNode.getName()).thenReturn("Processor-Name");
+        when(processorNode.getComponentType()).thenReturn("Processor-Type");
         when(processorNode.getLogger()).thenReturn(processorLogger);
-        when(processorNode.getActiveThreads(threadDetails)).thenReturn(Arrays.asList(activeThreadInfos));
+        when(processorNode.getActiveThreads(threadDetails)).thenReturn(Collections.singletonList(activeThreadInfo));
 
-        return processorNode;
-    }
-
-    private ProcessGroup mockProcessGroup(ProcessorNode... processorNodes) {
-        ProcessGroup processGroup = mock(ProcessGroup.class);
-
-        when(processGroup.findAllProcessors()).thenReturn(Arrays.asList(processorNodes));
-
-        return processGroup;
-    }
-
-    private FlowManager mockFlowManager(ProcessGroup processGroup) {
-        FlowManager flowManager = mock(FlowManager.class);
-
+        final ProcessGroup processGroup = mock(ProcessGroup.class);
+        when(processGroup.findAllProcessors()).thenReturn(Collections.singletonList(processorNode));
+        final FlowManager flowManager = mock(FlowManager.class);
         when(flowManager.getRootGroup()).thenReturn(processGroup);
-
         return flowManager;
     }
 }
