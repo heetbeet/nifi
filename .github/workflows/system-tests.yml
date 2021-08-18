@@ -13,7 +13,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: System Tests
+name: system-tests
 
 on: [push]
 
@@ -39,6 +39,7 @@ env:
     -P integration-tests
   MAVEN_PROJECTS: >-
     -pl nifi-system-tests/nifi-system-test-suite
+    -pl nifi-system-tests/nifi-stateless-system-test-suite
 
 jobs:
   ubuntu:
