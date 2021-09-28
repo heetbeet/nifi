@@ -190,4 +190,5 @@ jobs:
             -Duser.timezone=Europe/Paris
         run: >-
           ${{ env.MAVEN_COMMAND }}
+          ${{ env.MAVEN_PROFILES }}
           ${{ env.MAVEN_PROJECTS }}
