@@ -58,6 +58,8 @@ import org.apache.nifi.groups.ProcessGroup;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.logging.LogLevel;
 import org.apache.nifi.logging.LogRepositoryFactory;
+import org.apache.nifi.management.thread.ThreadDump;
+import org.apache.nifi.management.thread.ThreadSummary;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.nar.InstanceClassLoader;
 import org.apache.nifi.nar.NarCloseable;
@@ -75,13 +77,11 @@ import org.apache.nifi.scheduling.SchedulingStrategy;
 import org.apache.nifi.util.CharacterFilterUtils;
 import org.apache.nifi.util.FormatUtils;
 import org.apache.nifi.util.ReflectionUtils;
-import org.apache.nifi.util.ThreadUtils;
 import org.apache.nifi.util.file.classloader.ClassLoaderUtils;
 import org.quartz.CronExpression;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.management.ThreadInfo;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -103,10 +103,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
 
@@ -1525,11 +1522,10 @@ public class StandardProcessorNode extends ProcessorNode implements Connectable 
     }
 
     @Override
-    public synchronized List<ActiveThreadInfo> getActiveThreads(final ThreadDetails threadDetails) {
+    public synchronized List<ActiveThreadInfo> getActiveThreads(final ThreadDump threadDump) {
         final long now = System.currentTimeMillis();
 
-        final Map<Long, ThreadInfo> threadInfoMap = Stream.of(threadDetails.getThreadInfos())
-            .collect(Collectors.toMap(ThreadInfo::getThreadId, Function.identity(), (a, b) -> a));
+        final Map<Long, ThreadSummary> summaries = threadDump.getSummaries();
 
         final List<ActiveThreadInfo> threadList = new ArrayList<>(activeThreads.size());
         for (final Map.Entry<Thread, ActiveTask> entry : activeThreads.entrySet()) {
@@ -1537,9 +1533,9 @@ public class StandardProcessorNode extends ProcessorNode implements Connectable 
             final ActiveTask activeTask = entry.getValue();
             final Long timestamp = activeTask.getStartTime();
             final long activeMillis = now - timestamp;
-            final ThreadInfo threadInfo = threadInfoMap.get(thread.getId());
 
-            final String stackTrace = ThreadUtils.createStackTrace(threadInfo, threadDetails.getDeadlockedThreadIds(), threadDetails.getMonitorDeadlockThreadIds());
+            final ThreadSummary threadSummary = summaries.get(thread.getId());
+            final String stackTrace = threadSummary.getStackTrace();
 
             final ActiveThreadInfo activeThreadInfo = new ActiveThreadInfo(thread.getName(), stackTrace, activeMillis, activeTask.isTerminated());
             threadList.add(activeThreadInfo);

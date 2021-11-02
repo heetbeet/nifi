@@ -20,129 +20,124 @@ import org.apache.nifi.components.monitor.LongRunningTaskMonitor;
 import org.apache.nifi.controller.ActiveThreadInfo;
 import org.apache.nifi.controller.ProcessorNode;
 import org.apache.nifi.controller.TerminationAwareLogger;
-import org.apache.nifi.controller.ThreadDetails;
 import org.apache.nifi.controller.flow.FlowManager;
 import org.apache.nifi.events.EventReporter;
 import org.apache.nifi.groups.ProcessGroup;
+import org.apache.nifi.management.thread.ThreadDump;
+import org.apache.nifi.management.thread.ThreadDumpProvider;
+import org.apache.nifi.management.thread.ThreadSummary;
 import org.apache.nifi.reporting.Severity;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.slf4j.Logger;
+import org.mockito.Captor;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.text.NumberFormat;
 import java.util.Arrays;
-import java.util.Locale;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 public class LongRunningTaskMonitorTest {
 
     private static final String STACKTRACE = "line1\nline2";
 
-    @Test
-    public void test() {
-        ThreadDetails threadDetails = mock(ThreadDetails.class);
+    private static final long FIRST_THREAD_ID = 1024;
 
-        ActiveThreadInfo activeThreadInfo11 = mockActiveThreadInfo("Thread-11", 60_000);
-        ActiveThreadInfo activeThreadInfo12 = mockActiveThreadInfo("Thread-12", 60_001);
+    private static final String FIRST_THREAD_NAME = "FirstThread";
 
-        TerminationAwareLogger processorLogger1 = mock(TerminationAwareLogger.class);
-        ProcessorNode processorNode1 = mockProcessorNode("Processor-1-ID", "Processor-1-Name", "Processor-1-Type", processorLogger1,
-                threadDetails, activeThreadInfo11, activeThreadInfo12);
+    private static final long LONG_RUNNING_THREAD_ID = 2048;
 
-        ActiveThreadInfo activeThreadInfo21 = mockActiveThreadInfo("Thread-21", 1_000_000);
-        ActiveThreadInfo activeThreadInfo22 = mockActiveThreadInfo("Thread-22", 1_000);
+    private static final String LONG_RUNNING_THREAD_NAME = "LongRunningThread";
 
-        TerminationAwareLogger processorLogger2 = mock(TerminationAwareLogger.class);
-        ProcessorNode processorNode2 = mockProcessorNode("Processor-2-ID", "Processor-2-Name", "Processor-2-Type", processorLogger2,
-                threadDetails, activeThreadInfo21, activeThreadInfo22);
+    private static final String RUNNABLE = "RUNNABLE";
 
-        ProcessGroup processGroup = mockProcessGroup(processorNode1, processorNode2);
+    private static final long THRESHOLD = 1000;
 
-        FlowManager flowManager = mockFlowManager(processGroup);
+    private static final long THRESHOLD_EXCEEDED = 2000;
 
-        EventReporter eventReporter = mock(EventReporter.class);
+    private static final String FIRST_PROCESSOR_ID = "PROCESSOR-1";
 
-        Logger longRunningTaskMonitorLogger = mock(Logger.class);
+    private static final String FIRST_PROCESSOR_NAME = "FirstProcessor";
 
-        LongRunningTaskMonitor longRunningTaskMonitor = new LongRunningTaskMonitor(flowManager, eventReporter, 60_000) {
-            @Override
-            protected Logger getLogger() {
-                return longRunningTaskMonitorLogger;
-            }
+    private static final String PROCESSOR_TYPE = "SimpleProcessor";
 
-            @Override
-            protected ThreadDetails captureThreadDetails() {
-                return threadDetails;
-            }
-        };
+    private static final ActiveThreadInfo ACTIVE_THREAD = new ActiveThreadInfo(FIRST_THREAD_NAME, STACKTRACE, THRESHOLD, false);
 
-        longRunningTaskMonitor.run();
+    private static final ActiveThreadInfo LONG_RUNNING_ACTIVE_THREAD = new ActiveThreadInfo(LONG_RUNNING_THREAD_NAME, STACKTRACE, THRESHOLD_EXCEEDED, false);
 
-        ArgumentCaptor<String> logMessages = ArgumentCaptor.forClass(String.class);
-        verify(longRunningTaskMonitorLogger, times(2)).warn(logMessages.capture());
-        assertEquals("Long running task detected on processor [id=Processor-1-ID, name=Processor-1-Name, type=Processor-1-Type]. Task time: 60 seconds. Stack trace:\n" + STACKTRACE,
-                logMessages.getAllValues().get(0));
-        assertEquals("Long running task detected on processor [id=Processor-2-ID, name=Processor-2-Name, type=Processor-2-Type]. Task time: 1,000 seconds. Stack trace:\n" + STACKTRACE,
-                logMessages.getAllValues().get(1).replace(NumberFormat.getInstance(Locale.getDefault()).format(1000), NumberFormat.getInstance(Locale.US).format(1000)));
-        ArgumentCaptor<String> controllerBulletinMessages = ArgumentCaptor.forClass(String.class);
-        verify(eventReporter, times(2)).reportEvent(eq(Severity.WARNING), eq("Long Running Task"), controllerBulletinMessages.capture());
+    private static final String EVENT_CATEGORY = "Long Running Task";
 
-        final String firstBulletinMessage = controllerBulletinMessages.getAllValues().get(0);
-        assertTrue(firstBulletinMessage.contains("Processor-1-ID"));
-        assertTrue(firstBulletinMessage.contains("Processor-1-Type"));
-        assertTrue(firstBulletinMessage.contains("Processor-1-Name"));
-        assertTrue(firstBulletinMessage.contains("Thread-12"));
+    @Mock
+    private EventReporter eventReporter;
 
-        final String secondBulletinMessage = controllerBulletinMessages.getAllValues().get(1);
-        assertTrue(secondBulletinMessage.contains("Processor-2-ID"));
-        assertTrue(secondBulletinMessage.contains("Processor-2-Type"));
-        assertTrue(secondBulletinMessage.contains("Processor-2-Name"));
-        assertTrue(secondBulletinMessage.contains("Thread-21"));
-    }
+    @Mock
+    private FlowManager flowManager;
 
-    private ActiveThreadInfo mockActiveThreadInfo(String threadName, long activeMillis) {
-        ActiveThreadInfo activeThreadInfo = mock(ActiveThreadInfo.class);
+    @Mock
+    private ProcessGroup processGroup;
 
-        when(activeThreadInfo.getThreadName()).thenReturn(threadName);
-        when(activeThreadInfo.getStackTrace()).thenReturn(STACKTRACE);
-        when(activeThreadInfo.getActiveMillis()).thenReturn(activeMillis);
+    @Mock
+    private ThreadDumpProvider threadDumpProvider;
 
-        return activeThreadInfo;
-    }
+    @Mock
+    private TerminationAwareLogger firstProcessorLogger;
 
-    private ProcessorNode mockProcessorNode(String processorId, String processorName, String processorType, TerminationAwareLogger processorLogger,
-                                            ThreadDetails threadDetails, ActiveThreadInfo... activeThreadInfos) {
-        ProcessorNode processorNode = mock(ProcessorNode.class);
+    @Captor
+    private ArgumentCaptor<String> eventMessageCaptor;
 
-        when(processorNode.getIdentifier()).thenReturn(processorId);
-        when(processorNode.getName()).thenReturn(processorName);
-        when(processorNode.getComponentType()).thenReturn(processorType);
-        when(processorNode.getLogger()).thenReturn(processorLogger);
-        when(processorNode.getActiveThreads(threadDetails)).thenReturn(Arrays.asList(activeThreadInfos));
+    private LongRunningTaskMonitor monitor;
 
-        return processorNode;
-    }
+    private ThreadDump threadDump;
 
-    private ProcessGroup mockProcessGroup(ProcessorNode... processorNodes) {
-        ProcessGroup processGroup = mock(ProcessGroup.class);
-
-        when(processGroup.findAllProcessors()).thenReturn(Arrays.asList(processorNodes));
-
-        return processGroup;
-    }
-
-    private FlowManager mockFlowManager(ProcessGroup processGroup) {
-        FlowManager flowManager = mock(FlowManager.class);
-
+    @BeforeEach
+    public void setFlowManager() {
         when(flowManager.getRootGroup()).thenReturn(processGroup);
 
-        return flowManager;
+        final ThreadSummary firstThreadSummary = new ThreadSummary(FIRST_THREAD_ID, FIRST_THREAD_NAME, RUNNABLE, STACKTRACE);
+        final ThreadSummary longRunningThreadSummary = new ThreadSummary(LONG_RUNNING_THREAD_ID, LONG_RUNNING_THREAD_NAME, RUNNABLE, STACKTRACE);
+
+        final Map<Long, ThreadSummary> summaries = new HashMap<>();
+        summaries.put(firstThreadSummary.getId(), firstThreadSummary);
+        summaries.put(longRunningThreadSummary.getId(), longRunningThreadSummary);
+        threadDump = new ThreadDump(summaries);
+        when(threadDumpProvider.getThreadDump()).thenReturn(threadDump);
+
+        monitor = new LongRunningTaskMonitor(flowManager, eventReporter, threadDumpProvider, THRESHOLD);
+    }
+
+    @Test
+    public void testRunReportEvent() {
+        final ProcessorNode longRunningProcessor = mock(ProcessorNode.class);
+        when(longRunningProcessor.getActiveThreads(threadDump)).thenReturn(Arrays.asList(LONG_RUNNING_ACTIVE_THREAD, ACTIVE_THREAD));
+        when(longRunningProcessor.getIdentifier()).thenReturn(FIRST_PROCESSOR_ID);
+        when(longRunningProcessor.getName()).thenReturn(FIRST_PROCESSOR_NAME);
+        when(longRunningProcessor.getComponentType()).thenReturn(PROCESSOR_TYPE);
+        when(longRunningProcessor.getLogger()).thenReturn(firstProcessorLogger);
+
+        final ProcessorNode processor = mock(ProcessorNode.class);
+        when(processor.getActiveThreads(threadDump)).thenReturn(Collections.singletonList(ACTIVE_THREAD));
+
+        when(processGroup.findAllProcessors()).thenReturn(Arrays.asList(longRunningProcessor, processor));
+        when(flowManager.getRootGroup()).thenReturn(processGroup);
+
+        monitor.run();
+
+        verify(eventReporter).reportEvent(eq(Severity.WARNING), eq(EVENT_CATEGORY), eventMessageCaptor.capture());
+
+        final String eventMessage = eventMessageCaptor.getValue();
+        assertTrue(eventMessage.contains(FIRST_PROCESSOR_ID));
+        assertTrue(eventMessage.contains(PROCESSOR_TYPE));
+        assertTrue(eventMessage.contains(FIRST_PROCESSOR_NAME));
+        assertTrue(eventMessage.contains(LONG_RUNNING_THREAD_NAME));
     }
 }

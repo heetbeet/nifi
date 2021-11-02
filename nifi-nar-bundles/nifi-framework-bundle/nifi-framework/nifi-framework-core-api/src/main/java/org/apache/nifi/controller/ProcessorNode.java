@@ -26,6 +26,7 @@ import org.apache.nifi.controller.service.ControllerServiceNode;
 import org.apache.nifi.controller.service.ControllerServiceProvider;
 import org.apache.nifi.logging.ComponentLog;
 import org.apache.nifi.logging.LogLevel;
+import org.apache.nifi.management.thread.ThreadDump;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.components.ConfigVerificationResult;
 import org.apache.nifi.processor.ProcessContext;
@@ -75,12 +76,12 @@ public abstract class ProcessorNode extends AbstractComponentNode implements Con
 
     public abstract Requirement getInputRequirement();
 
-    public abstract List<ActiveThreadInfo> getActiveThreads(ThreadDetails threadDetails);
+    public abstract List<ActiveThreadInfo> getActiveThreads(ThreadDump threadDump);
 
     /**
      * Returns the number of threads that are still 'active' in this Processor but have been terminated
      * via {@link #terminate()}. To understand more about these threads, such as their stack traces and
-     * how long they have been active, one can use {@link #getActiveThreads(ThreadDetails)} and then filter the results
+     * how long they have been active, one can use {@link #getActiveThreads(ThreadDump)} and then filter the results
      * to include only those {@link ActiveThreadInfo} objects for which the thread is terminated. For example:
      * {@code getActiveThreads().stream().filter(ActiveThreadInfo::isTerminated).collect(Collectors.toList());}
      *

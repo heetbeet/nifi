@@ -19,10 +19,11 @@ package org.apache.nifi.diagnostics.bootstrap.tasks;
 import org.apache.nifi.controller.ActiveThreadInfo;
 import org.apache.nifi.controller.FlowController;
 import org.apache.nifi.controller.ProcessorNode;
-import org.apache.nifi.controller.ThreadDetails;
 import org.apache.nifi.diagnostics.DiagnosticTask;
 import org.apache.nifi.diagnostics.DiagnosticsDumpElement;
 import org.apache.nifi.diagnostics.StandardDiagnosticsDumpElement;
+import org.apache.nifi.management.thread.ThreadDump;
+import org.apache.nifi.management.thread.ThreadDumpProvider;
 import org.apache.nifi.util.FormatUtils;
 
 import java.util.ArrayList;
@@ -34,17 +35,20 @@ public class LongRunningProcessorTask implements DiagnosticTask {
 
     private final FlowController flowController;
 
-    public LongRunningProcessorTask(final FlowController flowController) {
+    private final ThreadDumpProvider threadSummaryProvider;
+
+    public LongRunningProcessorTask(final FlowController flowController, final ThreadDumpProvider threadSummaryProvider) {
         this.flowController = flowController;
+        this.threadSummaryProvider = threadSummaryProvider;
     }
 
     @Override
     public DiagnosticsDumpElement captureDump(final boolean verbose) {
         final List<String> details = new ArrayList<>();
-        final ThreadDetails threadDetails = ThreadDetails.capture();
+        final ThreadDump threadDump = threadSummaryProvider.getThreadDump();
 
         for (final ProcessorNode processorNode : flowController.getFlowManager().getRootGroup().findAllProcessors()) {
-            final List<ActiveThreadInfo> activeThreads = processorNode.getActiveThreads(threadDetails);
+            final List<ActiveThreadInfo> activeThreads = processorNode.getActiveThreads(threadDump);
 
             for (final ActiveThreadInfo activeThread : activeThreads) {
                 if (activeThread.getActiveMillis() > MIN_ACTIVE_MILLIS) {

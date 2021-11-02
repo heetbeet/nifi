@@ -83,7 +83,6 @@ import org.apache.nifi.controller.ProcessorNode;
 import org.apache.nifi.controller.ReportingTaskNode;
 import org.apache.nifi.controller.Snippet;
 import org.apache.nifi.controller.Template;
-import org.apache.nifi.controller.ThreadDetails;
 import org.apache.nifi.controller.flow.FlowManager;
 import org.apache.nifi.controller.label.Label;
 import org.apache.nifi.controller.queue.DropFlowFileState;
@@ -125,6 +124,10 @@ import org.apache.nifi.groups.ProcessGroupCounts;
 import org.apache.nifi.groups.RemoteProcessGroup;
 import org.apache.nifi.groups.RemoteProcessGroupCounts;
 import org.apache.nifi.history.History;
+import org.apache.nifi.management.thread.StandardThreadDumpProvider;
+import org.apache.nifi.management.thread.ThreadDump;
+import org.apache.nifi.management.thread.ThreadSummary;
+import org.apache.nifi.management.thread.ThreadDumpProvider;
 import org.apache.nifi.nar.ExtensionDefinition;
 import org.apache.nifi.nar.ExtensionManager;
 import org.apache.nifi.nar.NarClassLoadersHolder;
@@ -3930,7 +3933,10 @@ public final class DtoFactory {
     private List<ThreadDumpDTO> createThreadDumpDtos(final ProcessorNode procNode) {
         final List<ThreadDumpDTO> threadDumps = new ArrayList<>();
 
-        final List<ActiveThreadInfo> activeThreads = procNode.getActiveThreads(ThreadDetails.capture());
+        final ThreadDumpProvider threadSummaryProvider = new StandardThreadDumpProvider();
+        final ThreadDump threadDump = threadSummaryProvider.getThreadDump();
+
+        final List<ActiveThreadInfo> activeThreads = procNode.getActiveThreads(threadDump);
         for (final ActiveThreadInfo threadInfo : activeThreads) {
             final ThreadDumpDTO dto = new ThreadDumpDTO();
             dto.setStackTrace(threadInfo.getStackTrace());

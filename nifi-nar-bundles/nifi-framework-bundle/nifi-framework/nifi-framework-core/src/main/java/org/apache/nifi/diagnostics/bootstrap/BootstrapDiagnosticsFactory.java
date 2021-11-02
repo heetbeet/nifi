@@ -37,6 +37,7 @@ import org.apache.nifi.diagnostics.bootstrap.tasks.NiFiPropertiesDiagnosticTask;
 import org.apache.nifi.diagnostics.bootstrap.tasks.OperatingSystemDiagnosticTask;
 import org.apache.nifi.diagnostics.bootstrap.tasks.RepositoryDiagnosticTask;
 import org.apache.nifi.diagnostics.ThreadDumpTask;
+import org.apache.nifi.management.thread.StandardThreadDumpProvider;
 import org.apache.nifi.util.NiFiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -74,7 +75,7 @@ public class BootstrapDiagnosticsFactory implements DiagnosticsFactory {
         tasks.add(new OperatingSystemDiagnosticTask());
         tasks.add(new NarsDiagnosticTask(flowController.getExtensionManager()));
         tasks.add(new FlowConfigurationDiagnosticTask(flowController));
-        tasks.add(new LongRunningProcessorTask(flowController));
+        tasks.add(new LongRunningProcessorTask(flowController, new StandardThreadDumpProvider()));
         tasks.add(new ClusterDiagnosticTask(flowController));
         tasks.add(new GarbageCollectionDiagnosticTask(flowController));
         tasks.add(new MemoryPoolPeakUsageTask());

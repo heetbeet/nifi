@@ -16,76 +16,78 @@
  */
 package org.apache.nifi.components.monitor;
 
-import com.google.common.annotations.VisibleForTesting;
 import org.apache.nifi.controller.ActiveThreadInfo;
 import org.apache.nifi.controller.ProcessorNode;
-import org.apache.nifi.controller.ThreadDetails;
 import org.apache.nifi.controller.flow.FlowManager;
 import org.apache.nifi.events.EventReporter;
+import org.apache.nifi.management.thread.ThreadDump;
+import org.apache.nifi.management.thread.ThreadDumpProvider;
 import org.apache.nifi.reporting.Severity;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.text.NumberFormat;
 import java.util.List;
+import java.util.Objects;
 
+/**
+ * Long Running Task Monitor evaluates Processor Active Threads using a configurable threshold to publish warnings
+ */
 public class LongRunningTaskMonitor implements Runnable {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(LongRunningTaskMonitor.class);
 
     private final FlowManager flowManager;
     private final EventReporter eventReporter;
+    private final ThreadDumpProvider threadDumpProvider;
     private final long thresholdMillis;
 
-    public LongRunningTaskMonitor(FlowManager flowManager, EventReporter eventReporter, long thresholdMillis) {
-        this.flowManager = flowManager;
-        this.eventReporter = eventReporter;
+    public LongRunningTaskMonitor(final FlowManager flowManager,
+                                  final EventReporter eventReporter,
+                                  final ThreadDumpProvider threadDumpProvider,
+                                  final long thresholdMillis) {
+        this.flowManager = Objects.requireNonNull(flowManager, "Flow Manager required");
+        this.eventReporter = Objects.requireNonNull(eventReporter, "Event Reporter required");
+        this.threadDumpProvider = Objects.requireNonNull(threadDumpProvider, "Thread Dump Provider required");
         this.thresholdMillis = thresholdMillis;
     }
 
     @Override
     public void run() {
-        getLogger().debug("Checking long running processor tasks...");
         final long start = System.nanoTime();
 
         int activeThreadCount = 0;
         int longRunningThreadCount = 0;
 
-        ThreadDetails threadDetails = captureThreadDetails();
+        final ThreadDump threadDump = threadDumpProvider.getThreadDump();
 
-        for (ProcessorNode processorNode : flowManager.getRootGroup().findAllProcessors()) {
-            List<ActiveThreadInfo> activeThreads = processorNode.getActiveThreads(threadDetails);
+        for (final ProcessorNode processorNode : flowManager.getRootGroup().findAllProcessors()) {
+            final List<ActiveThreadInfo> activeThreads = processorNode.getActiveThreads(threadDump);
             activeThreadCount += activeThreads.size();
 
-            for (ActiveThreadInfo activeThread : activeThreads) {
+            for (final ActiveThreadInfo activeThread : activeThreads) {
                 if (activeThread.getActiveMillis() > thresholdMillis) {
                     longRunningThreadCount++;
-
-                    String taskSeconds = String.format("%,d seconds", activeThread.getActiveMillis() / 1000);
-
-                    getLogger().warn(String.format("Long running task detected on processor [id=%s, name=%s, type=%s]. Task time: %s. Stack trace:\n%s",
-                            processorNode.getIdentifier(), processorNode.getName(), processorNode.getComponentType(), taskSeconds, activeThread.getStackTrace()));
-
-                    eventReporter.reportEvent(Severity.WARNING, "Long Running Task", String.format("Processor with ID %s, Name %s and Type %s has a task that has been running for %s " +
-                            "(thread name: %s).", processorNode.getIdentifier(), processorNode.getName(), processorNode.getComponentType(), taskSeconds, activeThread.getThreadName()));
-
-                    processorNode.getLogger().warn(String.format("The processor has a task that has been running for %s (thread name: %s).",
-                            taskSeconds, activeThread.getThreadName()));
+                    reportActiveThread(processorNode, activeThread);
                 }
             }
         }
 
-        final long nanos = System.nanoTime() - start;
-        getLogger().info("Active threads: {}; Long running threads: {}; time to check: {} nanos", activeThreadCount, longRunningThreadCount, NumberFormat.getInstance().format(nanos));
+        final long duration = System.nanoTime() - start;
+        LOGGER.info("Threads Active [{}] Long Running [{}] Task Duration [{} nanos]", activeThreadCount, longRunningThreadCount, duration);
     }
 
-    @VisibleForTesting
-    protected Logger getLogger() {
-        return LOGGER;
-    }
+    private void reportActiveThread(final ProcessorNode processorNode, final ActiveThreadInfo activeThreadInfo) {
+        final String id = processorNode.getIdentifier();
+        final String name = processorNode.getName();
+        final String type = processorNode.getComponentType();
+        final String threadName = activeThreadInfo.getThreadName();
+        final long activeMillis = activeThreadInfo.getActiveMillis();
+        final String stackTrace = activeThreadInfo.getStackTrace();
 
-    @VisibleForTesting
-    protected ThreadDetails captureThreadDetails() {
-        return ThreadDetails.capture();
+        processorNode.getLogger().warn("Long Running Task Found: Thread Name [{}] Duration [{} ms]", new Object[]{ threadName, activeMillis });
+        LOGGER.warn("Long Running Task Found: Processor ID [{}] Name [{}] Duration [{} ms]\n{}", id, name, activeMillis, stackTrace);
+
+        final String message = String.format("Processor ID [%s] Name [%s] Type [%s] Thread Name [%s] Duration [%d ms]", id, name, type, threadName, activeMillis);
+        eventReporter.reportEvent(Severity.WARNING, "Long Running Task", message);
     }
 }
