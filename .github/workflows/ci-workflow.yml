@@ -55,6 +55,7 @@ jobs:
     steps:
       - name: System Information
         run: |
+          hostname
           cat /proc/cpuinfo
           cat /proc/meminfo
       - name: Checkout Code
@@ -101,6 +102,7 @@ jobs:
     steps:
       - name: System Information
         run: |
+          hostname
           top -l 1 | grep PhysMem
           sysctl machdep.cpu
       - name: Checkout Code
